@@ -118,17 +118,6 @@ if (!class_exists('MultiPostThumbnails')) {
 				$calling_post_id = absint($_GET['post_id']);
 			elseif (isset($_POST) && count($_POST)) // Like for async-upload where $_GET['post_id'] isn't set
 				$calling_post_id = $post->post_parent;
-
-			if(!$calling_post_id) {
-				return $form_fields;
-			}
-
-			// check the post type to see if link needs to be added
-			$calling_post = get_post($calling_post_id);
-			if ($calling_post->post_type != $this->post_type) {
-				return $form_fields;
-			}
-
 			$ajax_nonce = wp_create_nonce("set_post_thumbnail-{$this->post_type}-{$this->id}-{$calling_post_id}");
 			$link = sprintf('<a id="%4$s-%1$s-thumbnail-%2$s" class="%1$s-thumbnail" href="#" onclick="MultiPostThumbnailsSetAsThumbnail(\'%2$s\', \'%1$s\', \'%4$s\', \'%5$s\');return false;">Set as %3$s</a>', $this->id, $post->ID, $this->label, $this->post_type, $ajax_nonce);
 			$form_fields["{$this->post_type}-{$this->id}-thumbnail"] = array(
@@ -144,7 +133,7 @@ if (!class_exists('MultiPostThumbnails')) {
 		 * @return void
 		 */
 		public function enqueue_admin_scripts() {
-			wp_enqueue_script("featured-image-custom", $this->plugins_url('/js/multi-post-thumbnails-admin.js', __FILE__), array('jquery'));
+			wp_enqueue_script("featured-image-custom", plugins_url(basename(dirname(__FILE__)) . '/js/multi-post-thumbnails-admin.js'), array('jquery'));
 		}
 
 		/**
@@ -275,28 +264,6 @@ if (!class_exists('MultiPostThumbnails')) {
 			}
 
 			die('0');
-		}
-
-		private function plugins_url($relative_path, $plugin_path) {
-			$template_dir = get_template_directory();
-
-			foreach ( array('template_dir', 'plugin_path') as $var ) {
-				$$var = str_replace('\\' ,'/', $$var); // sanitize for Win32 installs
-				$$var = preg_replace('|/+|', '/', $$var);
-			}
-			if(0 === strpos($plugin_path, $template_dir)) {
-				$url = get_template_directory_uri();
-				$folder = str_replace($template_dir, '', dirname($plugin_path));
-				if ( '.' != $folder ) {
-					$url .= '/' . ltrim($folder, '/');
-				}
-				if ( !empty($relative_path) && is_string($relative_path) && strpos($relative_path, '..') === false ) {
-					$url .= '/' . ltrim($relative_path, '/');
-				}
-				return $url;
-			} else {
-				return plugins_url($relative_path, $plugin_path);
-			}
 		}
 
 	}

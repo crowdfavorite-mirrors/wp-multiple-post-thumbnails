@@ -3,7 +3,7 @@
 Plugin Name: Multiple Post Thumbnails
 Plugin URI: http://wordpress.org/extend/plugins/multiple-post-thumbnails/
 Description: Adds the ability to add multiple post thumbnails to a post type.
-Version: 0.9
+Version: 1.3
 Author: Chris Scott
 Author URI: http://vocecommuncations.com/
 */
@@ -81,8 +81,9 @@ if (!class_exists('MultiPostThumbnails')) {
 
 			add_action('add_meta_boxes', array($this, 'add_metabox'));
 			add_filter('attachment_fields_to_edit', array($this, 'add_attachment_field'), 20, 2);
-			add_action('admin_init', array($this, 'enqueue_admin_scripts'));
+			add_action('admin_enqueue_scripts', array($this, 'enqueue_admin_scripts'));
 			add_action("wp_ajax_set-{$this->post_type}-{$this->id}-thumbnail", array($this, 'set_thumbnail'));
+			add_action('delete_attachment', array($this, 'action_delete_attachment'));
 		}
 
 		/**
@@ -118,6 +119,9 @@ if (!class_exists('MultiPostThumbnails')) {
 				$calling_post_id = absint($_GET['post_id']);
 			elseif (isset($_POST) && count($_POST)) // Like for async-upload where $_GET['post_id'] isn't set
 				$calling_post_id = $post->post_parent;
+			
+			if (!$calling_post_id)
+				return $form_fields;
 
 			// check the post type to see if link needs to be added
 			$calling_post = get_post($calling_post_id);
@@ -139,8 +143,26 @@ if (!class_exists('MultiPostThumbnails')) {
 		 *
 		 * @return void
 		 */
-		public function enqueue_admin_scripts() {
-			wp_enqueue_script("featured-image-custom", $this->plugins_url('js/multi-post-thumbnails-admin.js', __FILE__), array('jquery'));
+		public function enqueue_admin_scripts( $hook ) {
+			// only load on select pages
+			if ( ! in_array( $hook, array( 'post-new.php', 'post.php', 'media-upload-popup' ) ) )
+				return;
+
+			add_thickbox();
+			wp_enqueue_script( "featured-image-custom", $this->plugins_url( 'js/multi-post-thumbnails-admin.js', __FILE__ ), array( 'jquery', 'media-upload' ) );
+		}
+
+		/**
+		 * Deletes the post meta data for posts when an attachment used as a
+		 * multiple post thumbnail is deleted from the Media Libray
+		 *
+		 * @global object $wpdb
+		 * @param int $post_id
+		 */
+		public function action_delete_attachment($post_id) {
+			global $wpdb;
+			$meta_key = "{$this->post_type}_{$this->id}_thumbnail_id";
+			$wpdb->query( $wpdb->prepare( "DELETE FROM $wpdb->postmeta WHERE meta_key = '%s' AND meta_value = %d", $meta_key, $post_id ));
 		}
 
 		private function plugins_url($relative_path, $plugin_path) {
@@ -211,7 +233,7 @@ if (!class_exists('MultiPostThumbnails')) {
 		  */
 		public static function get_the_post_thumbnail($post_type, $thumb_id, $post_id = NULL, $size = 'post-thumbnail', $attr = '' , $link_to_original = false) {
 			global $id;
-			$post_id = (NULL === $post_id) ? $id : $post_id;
+			$post_id = (NULL === $post_id) ? get_the_ID() : $post_id;
 			$post_thumbnail_id = self::get_post_thumbnail_id($post_type, $thumb_id, $post_id);
 			$size = apply_filters("{$post_type}_{$post_id}_thumbnail_size", $size);
 			if ($post_thumbnail_id) {
@@ -222,7 +244,7 @@ if (!class_exists('MultiPostThumbnails')) {
 				$html = '';
 			}
 
-			if ($link_to_original) {
+			if ($link_to_original && $html) {
 				$html = sprintf('<a href="%s">%s</a>', wp_get_attachment_url($post_thumbnail_id), $html);
 			}
 
@@ -234,11 +256,28 @@ if (!class_exists('MultiPostThumbnails')) {
 		 *
 		 * @param string $post_type The post type.
 		 * @param string $id The id used to register the thumbnail.
-		 * @param int $post_id Optional. Post ID.
+		 * @param int $post_id Post ID.
 		 * @return int
 		 */
 		public static function get_post_thumbnail_id($post_type, $id, $post_id) {
 			return get_post_meta($post_id, "{$post_type}_{$id}_thumbnail_id", true);
+		}
+
+		/**
+		 *
+		 * @param string $post_type The post type.
+		 * @param string $id The id used to register the thumbnail.
+		 * @param int $post_id Optional. The post ID. If not set, will attempt to get it.
+		 * @return mixed Thumbnail url or false if the post doesn't have a thumbnail for the given post type, and id.
+		 */
+		public static function get_post_thumbnail_url($post_type, $id, $post_id = 0) {
+			if (!$post_id) {
+				$post_id = get_the_ID();
+			}
+
+			$post_thumbnail_id = self::get_post_thumbnail_id($post_type, $id, $post_id);
+
+			return wp_get_attachment_url($post_thumbnail_id);
 		}
 
 		/**
@@ -247,7 +286,7 @@ if (!class_exists('MultiPostThumbnails')) {
 		 * @param string $thumbnail_id The thumbnail's post ID.
 		 * @return string HTML
 		 */
-		private function post_thumbnail_html($thumbnail_id = NULL) {
+		private function post_thumbnail_html($thumbnail_id = null) {
 			global $content_width, $_wp_additional_image_sizes, $post_ID;
 
 			$set_thumbnail_link = sprintf('<p class="hide-if-no-js"><a title="%1$s" href="%2$s" id="set-%3$s-%4$s-thumbnail" class="thickbox">%%s</a></p>', esc_attr__( "Set {$this->label}" ), get_upload_iframe_src('image'), $this->post_type, $this->id);
@@ -288,7 +327,7 @@ if (!class_exists('MultiPostThumbnails')) {
 
 			if ($thumbnail_id == '-1') {
 				delete_post_meta($post_ID, "{$this->post_type}_{$this->id}_thumbnail_id");
-				die($this->post_thumbnail_html(NULL));
+				die($this->post_thumbnail_html(null));
 			}
 
 			if ($thumbnail_id && get_post($thumbnail_id)) {
